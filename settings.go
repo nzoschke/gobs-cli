@@ -9,6 +9,7 @@ import (
 // SettingsCmd handles settings management.
 type SettingsCmd struct {
 	Show ShowCmd `help:"Show video settings." cmd:""`
+	Set  SetCmd  `help:"Set profile parameter." cmd:""`
 }
 
 // ShowCmd shows the video settings.
@@ -46,14 +47,18 @@ func (cmd *ShowCmd) Run(ctx *context) error {
 		label    string
 	}{
 		{"Output", "Mode", "Output Mode"},
-		{"SimpleOutput", "RecFormat", "Recording Format"},
-		{"SimpleOutput", "RecEncoder", "Recording Encoder"},
-		{"SimpleOutput", "RecQuality", "Recording Quality"},
-		{"SimpleOutput", "StreamEncoder", "Streaming Encoder"},
+
+		{"SimpleOutput", "StreamEncoder", "Simple Streaming Encoder"},
+		{"SimpleOutput", "RecEncoder", "Simple Recording Encoder"},
+		{"SimpleOutput", "RecFormat2", "Simple Recording Video Format"},
+		{"SimpleOutput", "RecAudioEncoder", "Simple Recording Audio Format"},
+		{"SimpleOutput", "RecQuality", "Simple Recording Quality"},
+
+		{"AdvOut", "Encoder", "Advanced Streaming Encoder"},
+		{"AdvOut", "RecEncoder", "Advanced Recording Encoder"},
 		{"AdvOut", "RecType", "Advanced Recording Type"},
-		{"AdvOut", "FFFormat", "Advanced Recording Format"},
-		{"AdvOut", "RecFormat2", "Advanced Recording Format"},
-		{"AdvOut", "RecAudioEncoder", "Advanced Audio Format"},
+		{"AdvOut", "RecFormat2", "Advanced Recording Video Format"},
+		{"AdvOut", "RecAudioEncoder", "Advanced Recording Audio Format"},
 	}
 
 	for _, param := range params {
@@ -67,5 +72,28 @@ func (cmd *ShowCmd) Run(ctx *context) error {
 		}
 	}
 
+	return nil
+}
+
+// SetCmd sets a profile parameter.
+type SetCmd struct {
+	Category string `arg:"" help:"Parameter category (e.g., AdvOut, SimpleOutput, Output)." required:""`
+	Name     string `arg:"" help:"Parameter name (e.g., RecFormat2, RecEncoder)." required:""`
+	Value    string `arg:"" help:"Parameter value to set." required:""`
+}
+
+// Run executes the set command.
+func (cmd *SetCmd) Run(ctx *context) error {
+	_, err := ctx.Client.Config.SetProfileParameter(
+		config.NewSetProfileParameterParams().
+			WithParameterCategory(cmd.Category).
+			WithParameterName(cmd.Name).
+			WithParameterValue(cmd.Value),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set parameter %s.%s: %w", cmd.Category, cmd.Name, err)
+	}
+
+	fmt.Fprintf(ctx.Out, "Set %s.%s = %s\n", cmd.Category, cmd.Name, cmd.Value)
 	return nil
 }
