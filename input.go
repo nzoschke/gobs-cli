@@ -17,6 +17,8 @@ type InputCmd struct {
 	Mute   InputMuteCmd   `cmd:"" help:"Mute input."      aliases:"m"`
 	Unmute InputUnmuteCmd `cmd:"" help:"Unmute input."    aliases:"um"`
 	Toggle InputToggleCmd `cmd:"" help:"Toggle input."    aliases:"tg"`
+	Create InputCreateCmd `cmd:"" help:"Create input."    aliases:"c"`
+	Show   InputShowCmd   `cmd:"" help:"Show input details." aliases:"s"`
 }
 
 // InputListCmd provides a command to list all inputs.
@@ -186,5 +188,144 @@ func (cmd *InputToggleCmd) Run(ctx *context) error {
 	} else {
 		fmt.Fprintf(ctx.Out, "Unmuted input: %s\n", ctx.Style.Highlight(cmd.InputName))
 	}
+	return nil
+}
+
+// InputCreateCmd provides a command to create an input.
+type InputCreateCmd struct {
+	Kind   string `arg:"" help:"Input kind (e.g., coreaudio_input_capture, pulse_input_capture)." required:""`
+	Name   string `arg:"" help:"Name for the input." required:""`
+	Device string `arg:"" help:"Device ID or name." required:""`
+}
+
+// Run executes the command to create an input.
+func (cmd *InputCreateCmd) Run(ctx *context) error {
+	// Get current scene
+	currentScene, err := ctx.Client.Scenes.GetCurrentProgramScene()
+	if err != nil {
+		return fmt.Errorf("failed to get current scene: %w", err)
+	}
+	
+	settings := map[string]interface{}{
+		"device_id": cmd.Device,
+	}
+	
+	_, err = ctx.Client.Inputs.CreateInput(
+		inputs.NewCreateInputParams().
+			WithInputKind(cmd.Kind).
+			WithInputName(cmd.Name).
+			WithInputSettings(settings).
+			WithSceneName(currentScene.CurrentProgramSceneName),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create input: %w", err)
+	}
+	
+	fmt.Fprintf(ctx.Out, "Created input: %s (%s) in scene %s\n", 
+		ctx.Style.Highlight(cmd.Name), cmd.Kind, ctx.Style.Highlight(currentScene.CurrentProgramSceneName))
+	return nil
+}
+
+// InputShowCmd provides a command to show input details.
+type InputShowCmd struct {
+	Name string `arg:"" help:"Name of the input to show." required:""`
+}
+
+// Run executes the command to show input details.
+func (cmd *InputShowCmd) Run(ctx *context) error {
+	// Get input settings
+	settingsResp, err := ctx.Client.Inputs.GetInputSettings(
+		inputs.NewGetInputSettingsParams().WithInputName(cmd.Name),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get input settings: %w", err)
+	}
+	
+	// Get input kind from input list
+	listResp, err := ctx.Client.Inputs.GetInputList(inputs.NewGetInputListParams())
+	if err != nil {
+		return fmt.Errorf("failed to get input list: %w", err)
+	}
+	
+	var inputKind string
+	for _, input := range listResp.Inputs {
+		if input.InputName == cmd.Name {
+			inputKind = input.InputKind
+			break
+		}
+	}
+	
+	fmt.Fprintf(ctx.Out, "Input Details:\n")
+	fmt.Fprintf(ctx.Out, "  Name: %s\n", ctx.Style.Highlight(cmd.Name))
+	fmt.Fprintf(ctx.Out, "  Kind: %s\n", inputKind)
+	
+	// Display device information if available
+	if deviceID, ok := settingsResp.InputSettings["device_id"].(string); ok {
+		fmt.Fprintf(ctx.Out, "  Device ID: %s\n", deviceID)
+	}
+	if deviceName, ok := settingsResp.InputSettings["device_name"].(string); ok {
+		fmt.Fprintf(ctx.Out, "  Device Name: %s\n", deviceName)
+	}
+	
+	// Display other settings
+	fmt.Fprintf(ctx.Out, "\nSettings:\n")
+	for key, value := range settingsResp.InputSettings {
+		if key != "device_id" && key != "device_name" {
+			fmt.Fprintf(ctx.Out, "  %s: %v\n", key, value)
+		}
+	}
+	
+	// Get and display available device options
+	if inputKind != "" {
+		fmt.Fprintf(ctx.Out, "\nAvailable Device Options:\n")
+		
+		// Try to get device list using GetInputPropertiesListPropertyItems
+		deviceListResp, err := ctx.Client.Inputs.GetInputPropertiesListPropertyItems(
+			inputs.NewGetInputPropertiesListPropertyItemsParams().
+				WithInputName(cmd.Name).
+				WithPropertyName("device_id"),
+		)
+		if err == nil && len(deviceListResp.PropertyItems) > 0 {
+			fmt.Fprintf(ctx.Out, "  Property: device_id\n")
+			for _, item := range deviceListResp.PropertyItems {
+				// Skip empty items
+				if item.ItemName != "" || item.ItemValue != "" {
+					fmt.Fprintf(ctx.Out, "    %s: %s\n", item.ItemName, item.ItemValue)
+				}
+			}
+		} else {
+			// Fallback: try other common property names for devices
+			deviceProps := []string{
+				"device_id", "video_device_id", "audio_device_id", "monitor_id",
+				"device", "video_device", "audio_device", "capture_device",
+				"input_device", "source_device", "camera_device", "microphone_device",
+			}
+			found := false
+			
+			for _, propName := range deviceProps {
+				deviceListResp, err := ctx.Client.Inputs.GetInputPropertiesListPropertyItems(
+					inputs.NewGetInputPropertiesListPropertyItemsParams().
+						WithInputName(cmd.Name).
+						WithPropertyName(propName),
+				)
+				if err == nil && len(deviceListResp.PropertyItems) > 0 {
+					fmt.Fprintf(ctx.Out, "  Property: %s\n", propName)
+					for _, item := range deviceListResp.PropertyItems {
+						// Skip empty items
+						if item.ItemName != "" || item.ItemValue != "" {
+							fmt.Fprintf(ctx.Out, "    %s: %s\n", item.ItemName, item.ItemValue)
+						}
+					}
+					found = true
+					break
+				}
+			}
+			
+			if !found {
+				fmt.Fprintf(ctx.Out, "  No device enumeration available for this input type (%s)\n", inputKind)
+			}
+		}
+	}
+	
 	return nil
 }
