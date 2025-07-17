@@ -11,17 +11,17 @@ import (
 
 // ConfigCmd handles configuration management.
 type ConfigCmd struct {
-	SetPassword SetPasswordCmd `help:"Set password in config files." cmd:""`
-	LaunchObs   LaunchObsCmd   `help:"Launch OBS if not running." cmd:""`
+	Pass PassCmd `help:"Set password in config files." cmd:""`
+	Open OpenCmd `help:"Launch OBS if not running." cmd:""`
 }
 
-// SetPasswordCmd sets the OBS password in configuration files.
-type SetPasswordCmd struct {
+// PassCmd sets the OBS password in configuration files.
+type PassCmd struct {
 	Password string `arg:"" help:"Password to set for OBS authentication."`
 }
 
-// Run executes the set-password command.
-func (cmd *SetPasswordCmd) Run() error {
+// Run executes the pass command.
+func (cmd *PassCmd) Run() error {
 	// Get user config directory
 	userConfigDir, err := os.UserConfigDir()
 	if err != nil {
@@ -88,11 +88,11 @@ func writeObsConfig(configPath, password string) error {
 	return os.WriteFile(configPath, data, 0600)
 }
 
-// LaunchObsCmd launches OBS if it's not already running.
-type LaunchObsCmd struct{}
+// OpenCmd launches OBS if it's not already running.
+type OpenCmd struct{}
 
-// Run executes the launch-obs command.
-func (cmd *LaunchObsCmd) Run() error {
+// Run executes the open command.
+func (cmd *OpenCmd) Run() error {
 	// Check if OBS is already running
 	if isObsRunning() {
 		fmt.Printf("OBS is already running\n")
