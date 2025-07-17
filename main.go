@@ -71,6 +71,7 @@ type CLI struct {
 	Filter          FilterCmd          `help:"Manage filters."                         cmd:"" aliases:"f"   group:"Filter"`
 	Projector       ProjectorCmd       `help:"Manage projectors."                      cmd:"" aliases:"prj" group:"Projector"`
 	Screenshot      ScreenshotCmd      `help:"Take screenshots."                       cmd:"" aliases:"ss"  group:"Screenshot"`
+	Config          ConfigCmd          `help:"Manage configuration."                   cmd:"" aliases:"cfg" group:"Configuration"`
 }
 
 type context struct {
