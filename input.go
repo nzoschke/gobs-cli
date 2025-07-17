@@ -19,6 +19,9 @@ type InputCmd struct {
 	Toggle InputToggleCmd `cmd:"" help:"Toggle input."    aliases:"tg"`
 	Create InputCreateCmd `cmd:"" help:"Create input."    aliases:"c"`
 	Show   InputShowCmd   `cmd:"" help:"Show input details." aliases:"s"`
+	Update InputUpdateCmd `cmd:"" help:"Update input device." aliases:"u"`
+	Delete InputDeleteCmd `cmd:"" help:"Delete input."      aliases:"d"`
+	Kinds  InputKindsCmd  `cmd:"" help:"List input kinds." aliases:"k"`
 }
 
 // InputListCmd provides a command to list all inputs.
@@ -191,9 +194,29 @@ func (cmd *InputToggleCmd) Run(ctx *context) error {
 	return nil
 }
 
+// getDevicePropertyName returns the correct device property name for the given input kind.
+func getDevicePropertyName(inputKind string) string {
+	switch inputKind {
+	case "coreaudio_input_capture", "coreaudio_output_capture":
+		return "device_id"
+	case "macos-avcapture":
+		return "device"
+	case "pulse_input_capture", "pulse_output_capture":
+		return "device_id"
+	case "v4l2_input":
+		return "device_id"
+	case "dshow_input":
+		return "video_device_id"
+	case "wasapi_input_capture", "wasapi_output_capture":
+		return "device_id"
+	default:
+		return "device_id" // Default fallback
+	}
+}
+
 // InputCreateCmd provides a command to create an input.
 type InputCreateCmd struct {
-	Kind   string `arg:"" help:"Input kind (e.g., coreaudio_input_capture, pulse_input_capture)." required:""`
+	Kind   string `arg:"" help:"Input kind (e.g., coreaudio_input_capture, macos-avcapture)." required:""`
 	Name   string `arg:"" help:"Name for the input." required:""`
 	Device string `arg:"" help:"Device ID or name." required:""`
 }
@@ -206,8 +229,10 @@ func (cmd *InputCreateCmd) Run(ctx *context) error {
 		return fmt.Errorf("failed to get current scene: %w", err)
 	}
 	
+	// Use correct device property name based on input kind
+	deviceProperty := getDevicePropertyName(cmd.Kind)
 	settings := map[string]interface{}{
-		"device_id": cmd.Device,
+		deviceProperty: cmd.Device,
 	}
 	
 	_, err = ctx.Client.Inputs.CreateInput(
@@ -327,5 +352,98 @@ func (cmd *InputShowCmd) Run(ctx *context) error {
 		}
 	}
 	
+	return nil
+}
+
+// InputKindsCmd provides a command to list all input kinds.
+type InputKindsCmd struct{}
+
+// Run executes the command to list all input kinds.
+func (cmd *InputKindsCmd) Run(ctx *context) error {
+	kindsResp, err := ctx.Client.Inputs.GetInputKindList(
+		inputs.NewGetInputKindListParams().WithUnversioned(false),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get input kinds: %w", err)
+	}
+	
+	fmt.Fprintf(ctx.Out, "Available Input Kinds:\n")
+	for _, kind := range kindsResp.InputKinds {
+		fmt.Fprintf(ctx.Out, "  %s\n", kind)
+	}
+	
+	return nil
+}
+
+// InputUpdateCmd provides a command to update an input's device.
+type InputUpdateCmd struct {
+	Name   string `arg:"" help:"Name of the input to update." required:""`
+	Device string `arg:"" help:"New device ID or name." required:""`
+}
+
+// Run executes the command to update an input's device.
+func (cmd *InputUpdateCmd) Run(ctx *context) error {
+	// Get current input settings to determine input kind
+	settingsResp, err := ctx.Client.Inputs.GetInputSettings(
+		inputs.NewGetInputSettingsParams().WithInputName(cmd.Name),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get input settings: %w", err)
+	}
+	
+	// Get input kind from input list
+	listResp, err := ctx.Client.Inputs.GetInputList(inputs.NewGetInputListParams())
+	if err != nil {
+		return fmt.Errorf("failed to get input list: %w", err)
+	}
+	
+	var inputKind string
+	for _, input := range listResp.Inputs {
+		if input.InputName == cmd.Name {
+			inputKind = input.InputKind
+			break
+		}
+	}
+	
+	if inputKind == "" {
+		return fmt.Errorf("input %s not found", cmd.Name)
+	}
+	
+	// Use correct device property name based on input kind
+	deviceProperty := getDevicePropertyName(inputKind)
+	
+	// Update the device property in existing settings
+	newSettings := settingsResp.InputSettings
+	newSettings[deviceProperty] = cmd.Device
+	
+	_, err = ctx.Client.Inputs.SetInputSettings(
+		inputs.NewSetInputSettingsParams().
+			WithInputName(cmd.Name).
+			WithInputSettings(newSettings),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update input: %w", err)
+	}
+	
+	fmt.Fprintf(ctx.Out, "Updated input %s device to: %s\n", 
+		ctx.Style.Highlight(cmd.Name), cmd.Device)
+	return nil
+}
+
+// InputDeleteCmd provides a command to delete an input.
+type InputDeleteCmd struct {
+	Name string `arg:"" help:"Name of the input to delete." required:""`
+}
+
+// Run executes the command to delete an input.
+func (cmd *InputDeleteCmd) Run(ctx *context) error {
+	_, err := ctx.Client.Inputs.RemoveInput(
+		inputs.NewRemoveInputParams().WithInputName(cmd.Name),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to delete input: %w", err)
+	}
+	
+	fmt.Fprintf(ctx.Out, "Deleted input: %s\n", ctx.Style.Highlight(cmd.Name))
 	return nil
 }
