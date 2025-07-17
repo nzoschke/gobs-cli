@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 )
 
 // ConfigCmd handles configuration management.
 type ConfigCmd struct {
 	SetPassword SetPasswordCmd `help:"Set password in config files." cmd:""`
+	LaunchObs   LaunchObsCmd   `help:"Launch OBS if not running." cmd:""`
 }
 
 // SetPasswordCmd sets the OBS password in configuration files.
@@ -18,7 +21,7 @@ type SetPasswordCmd struct {
 }
 
 // Run executes the set-password command.
-func (cmd *SetPasswordCmd) Run(ctx *context) error {
+func (cmd *SetPasswordCmd) Run() error {
 	// Get user config directory
 	userConfigDir, err := os.UserConfigDir()
 	if err != nil {
@@ -39,7 +42,7 @@ func (cmd *SetPasswordCmd) Run(ctx *context) error {
 		return fmt.Errorf("failed to write to OBS config: %w", err)
 	}
 
-	fmt.Fprintf(ctx.Out, "Password set in:\n  %s\n  %s\n", gobsConfigPath, obsConfigPath)
+	fmt.Printf("Password set in:\n  %s\n  %s\n", gobsConfigPath, obsConfigPath)
 	return nil
 }
 
@@ -83,4 +86,65 @@ func writeObsConfig(configPath, password string) error {
 	}
 
 	return os.WriteFile(configPath, data, 0600)
+}
+
+// LaunchObsCmd launches OBS if it's not already running.
+type LaunchObsCmd struct{}
+
+// Run executes the launch-obs command.
+func (cmd *LaunchObsCmd) Run() error {
+	// Check if OBS is already running
+	if isObsRunning() {
+		fmt.Printf("OBS is already running\n")
+		return nil
+	}
+
+	// Launch OBS
+	if err := launchObs(); err != nil {
+		return fmt.Errorf("failed to launch OBS: %w", err)
+	}
+
+	fmt.Printf("OBS launched\n")
+	return nil
+}
+
+// isObsRunning checks if OBS is currently running.
+func isObsRunning() bool {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("pgrep", "-f", "OBS")
+	case "windows":
+		cmd = exec.Command("tasklist", "/FI", "IMAGENAME eq obs64.exe", "/FO", "CSV")
+	default:
+		return false
+	}
+	err := cmd.Run()
+	return err == nil
+}
+
+// launchObs launches OBS application.
+func launchObs() error {
+	switch runtime.GOOS {
+	case "darwin":
+		obsPath := "/Applications/OBS.app"
+		if _, err := os.Stat(obsPath); os.IsNotExist(err) {
+			return fmt.Errorf("OBS not found at %s", obsPath)
+		}
+		return exec.Command("open", obsPath).Start()
+	case "windows":
+		// Try common installation paths
+		paths := []string{
+			`C:\Program Files\obs-studio\bin\64bit\obs64.exe`,
+			`C:\Program Files (x86)\obs-studio\bin\64bit\obs64.exe`,
+		}
+		for _, path := range paths {
+			if _, err := os.Stat(path); err == nil {
+				return exec.Command(path).Start()
+			}
+		}
+		return fmt.Errorf("OBS not found in common installation paths")
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
 }

@@ -118,6 +118,12 @@ func main() {
 			}(),
 		})
 
+	// Check if this is a config command that doesn't need OBS connection
+	if strings.HasPrefix(ctx.Command(), "config ") {
+		ctx.FatalIfErrorf(ctx.Run())
+		return
+	}
+
 	client, err := connectObs(cli.ObsConfig)
 	ctx.FatalIfErrorf(err)
 
